@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<!-- 
+    🔥 LEARNING BLOCK 1: What is HTML?
+    HTML = HyperText Markup Language
+    Think of it as the SKELETON of your UI
+    Every <tag> is like a bone in the body
+-->
+
+<html>
+<head>
+    <!-- 
+        🔥 LEARNING BLOCK 2: The <head> section
+        This contains INSTRUCTIONS about the page
+        Not visible on screen, but controls HOW it looks
+    -->
+    <meta charset="UTF-8">
+    <title>Live Trading Dashboard</title>
+    
+    <!-- 
+        🔥 LEARNING BLOCK 3: CSS (Cascading Style Sheets)
+        This is the CLOTHING for your skeleton
+        Makes things pretty, adds colors, animations
+    -->
+    <style>
+        /* CSS Rule structure: selector { property: value; } */
+        
+        /* Selector: body - applies to entire page */
+        body {
+            font-family: 'Courier New', monospace;
+            background: #0a0e27;  /* Dark blue background */
+            color: #00ff9d;        /* Neon green text */
+            padding: 20px;
+            margin: 0;
+        }
+        
+        /* Selector: .container - applies to anything with class="container" */
+        .container {
+            max-width: 900px;      /* Don't get too wide */
+            margin: 0 auto;         /* Center horizontally */
+        }
+        
+        /* 🔥 LEARNING BLOCK 4: Animation keyframes */
+        @keyframes flashUp {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.05); color: #00ff9d; }
+            100% { transform: scale(1); }
+        }
+        
+        /* Apply animation when class="up" is added */
+        .up {
+            animation: flashUp 0.3s ease;
+        }
+    </style>
+</head>
+
+<body>
+    <!-- 
+        🔥 LEARNING BLOCK 5: The <body> section
+        Everything visible on screen goes HERE
+    -->
+    
+    <div class="container">
+        <!-- 
+            🔥 LEARNING BLOCK 6: div = division/container
+            Like a box that holds other elements
+        -->
+        
+        <div class="header">
+            <!-- 
+                🔥 LEARNING BLOCK 7: Headings
+                <h1> is biggest, <h6> is smallest
+            -->
+            <h1>📈 LIVE TRADING DASHBOARD</h1>
+            <p>Real-time prices from Deriv → Your Strategy → UI Display</p>
+        </div>
+
+        <!-- 
+            🔥 LEARNING BLOCK 8: Status indicator
+            id="status" lets JavaScript find this element
+        -->
+        <div id="status" class="status disconnected">
+            🔴 DISCONNECTED - Click Connect to Start
+        </div>
+        
+        <!-- 
+            🔥 LEARNING BLOCK 9: Buttons
+            onclick="functionName()" runs JavaScript when clicked
+        -->
+        <div style="text-align: center; margin-bottom: 20px;">
+            <button onclick="connectWebSocket()">🔌 CONNECT TO BACKEND</button>
+            <button onclick="clearHistory()">🗑️ CLEAR HISTORY</button>
+            <!-- MINOR EDIT FOR LEARNING: Added a TEST button -->
+            <button onclick="testConnection()">🧪 TEST CONNECTION</button>
+        </div>
+
+        <!-- 
+            🔥 LEARNING BLOCK 10: Statistics display
+            These will update dynamically via JavaScript
+        -->
+        <div class="stats">
+            <div class="stat">
+                <div>📊 Total Ticks</div>
+                <div class="stat-value" id="tickCount">0</div>
+            </div>
+            <div class="stat">
+                <div>📈 High</div>
+                <div class="stat-value" id="highPrice">--</div>
+            </div>
+            <div class="stat">
+                <div>📉 Low</div>
+                <div class="stat-value" id="lowPrice">--</div>
+            </div>
+        </div>
+
+        <!-- 
+            🔥 LEARNING BLOCK 11: Main price display
+        -->
+        <div class="price-card">
+            <div class="symbol" id="symbol">R_100</div>
+            <div class="price" id="price">---</div>
+            <div class="timestamp" id="timestamp">Waiting for data...</div>
+        </div>
+
+        <!-- 
+            🔥 LEARNING BLOCK 12: Scrollable history box
+        -->
+        <div class="ticks-box">
+            <div id="ticksList">
+                <div class="tick-item">💡 Click CONNECT and watch live ticks appear here...</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 
+        🔥 LEARNING BLOCK 13: JavaScript
+        This is the BRAIN of your UI
+        Controls behavior, connects to backend, updates display
+    -->
+    <script>
+        // 🔥 LEARNING BLOCK 14: Variables - storing data
+        let ws = null;           // WebSocket connection (starts as null)
+        let tickCount = 0;       // How many prices received
+        let highPrice = null;    // Highest price seen
+        let lowPrice = null;     // Lowest price seen
+        let lastPrice = null;    // Previous price (for animation)
+        
+        // 🔥 LEARNING BLOCK 15: FUNCTIONS - reusable code blocks
+        
+        // This function CONNECTS to the backend WebSocket
+        function connectWebSocket() {
+            // Create WebSocket connection to backend/main.py
+            ws = new WebSocket("ws://localhost:8000/ws");
+            
+            // 🔥 EVENT 1: When connection opens
+            ws.onopen = function() {
+                updateStatus(true);
+                addTickToList("🚀 Connected to backend! Waiting for price ticks...");
+                console.log("✅ Connected to FastAPI backend");
+            };
+            
+            // 🔥 EVENT 2: When a message arrives (THIS IS THE MAGIC!)
+            ws.onmessage = function(event) {
+                const message = JSON.parse(event.data);
+                console.log("Received:", message);
+                
+                // Check what TYPE of message we got
+                if (message.type === "price") {
+                    updatePriceDisplay(message.data);
+                } else if (message.type === "signal") {
+                    addSignalToList(message.data);
+                }
+            };
+            
+            // 🔥 EVENT 3: When connection closes
+            ws.onclose = function() {
+                updateStatus(false);
+                addTickToList("❌ Disconnected from backend");
+            };
+            
+            // 🔥 EVENT 4: When there's an error
+            ws.onerror = function(error) {
+                console.error("Error:", error);
+                addTickToList("⚠️ Connection error - is backend running?");
+            };
+        }
+        
+        // 🔥 MINOR EDIT FOR LEARNING: Test function
+        function testConnection() {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                addTickToList("✅ Connection is ACTIVE! Waiting for next price tick...");
+                // Send a test message to backend
+                ws.send(JSON.stringify({type: "test", message: "Hello from UI!"}));
+            } else {
+                addTickToList("❌ Connection is CLOSED. Click CONNECT button first!");
+            }
+        }
+        
+        // This function updates the big price display
+        function updatePriceDisplay(data) {
+            const priceElement = document.getElementById('price');
+            const newPrice = data.price;
+            
+            // Update text elements
+            document.getElementById('symbol').innerHTML = data.symbol;
+            document.getElementById('timestamp').innerHTML = new Date(data.timestamp).toLocaleTimeString();
+            priceElement.innerHTML = newPrice.toFixed(2);
+            
+            // Add animation based on price direction
+            if (lastPrice !== null) {
+                if (newPrice > lastPrice) {
+                    priceElement.className = 'price up';
+                } else if (newPrice < lastPrice) {
+                    priceElement.className = 'price down';
+                }
+                setTimeout(() => {
+                    priceElement.className = 'price';
+                }, 300);
+            }
+            
+            lastPrice = newPrice;
+            
+            // Update statistics
+            tickCount++;
+            document.getElementById('tickCount').innerHTML = tickCount;
+            
+            if (highPrice === null || newPrice > highPrice) {
+                highPrice = newPrice;
+                document.getElementById('highPrice').innerHTML = highPrice.toFixed(2);
+            }
+            
+            if (lowPrice === null || newPrice < lowPrice) {
+                lowPrice = newPrice;
+                document.getElementById('lowPrice').innerHTML = lowPrice.toFixed(2);
+            }
+            
+            // Add to history
+            addTickToList(`📊 ${data.symbol} → ${newPrice.toFixed(2)} @ ${new Date(data.timestamp).toLocaleTimeString()}`);
+        }
+        
+        // Add signal messages to history
+        function addSignalToList(signalData) {
+            const ticksList = document.getElementById('ticksList');
+            const signalDiv = document.createElement('div');
+            signalDiv.className = 'signal';
+            signalDiv.innerHTML = `🚀 SIGNAL! ${JSON.stringify(signalData)}`;
+            ticksList.insertBefore(signalDiv, ticksList.firstChild);
+            
+            // Keep only last 50 items
+            while (ticksList.children.length > 50) {
+                ticksList.removeChild(ticksList.lastChild);
+            }
+        }
+        
+        // Add regular messages to history
+        function addTickToList(message) {
+            const ticksList = document.getElementById('ticksList');
+            const tickDiv = document.createElement('div');
+            tickDiv.className = 'tick-item';
+            const time = new Date().toLocaleTimeString();
+            tickDiv.innerHTML = `<strong>[${time}]</strong> ${message}`;
+            ticksList.insertBefore(tickDiv, ticksList.firstChild);
+            
+            // Keep only last 50 items
+            while (ticksList.children.length > 50) {
+                ticksList.removeChild(ticksList.lastChild);
+            }
+        }
+        
+        // Update connection status display
+        function updateStatus(isConnected) {
+            const statusDiv = document.getElementById('status');
+            if (isConnected) {
+                statusDiv.className = 'status connected';
+                statusDiv.innerHTML = '🟢 CONNECTED - Receiving live ticks from Deriv!';
+            } else {
+                statusDiv.className = 'status disconnected';
+                statusDiv.innerHTML = '🔴 DISCONNECTED - Click Connect to start';
+            }
+        }
+        
+        // Clear all history and reset stats
+        function clearHistory() {
+            document.getElementById('ticksList').innerHTML = '<div class="tick-item">📋 History cleared - waiting for new ticks...</div>';
+            tickCount = 0;
+            highPrice = null;
+            lowPrice = null;
+            lastPrice = null;
+            document.getElementById('tickCount').innerHTML = '0';
+            document.getElementById('highPrice').innerHTML = '--';
+            document.getElementById('lowPrice').innerHTML = '--';
+            document.getElementById('price').innerHTML = '---';
+            addTickToList("🗑️ History cleared");
+        }
+        
+        // 🔥 MINI PROJECT: Try modifying these values!
+        // TASK 1: Change the color of signals (find .signal in CSS)
+        // TASK 2: Add a custom sound when signal arrives
+        // TASK 3: Change the update speed (can't - it's driven by backend!)
+        // TASK 4: Add a "Last Signal Time" display
+        
+        console.log("💡 HTML UI Loaded! Ready to connect to backend...");
+    </script>
+</body>
+</html>

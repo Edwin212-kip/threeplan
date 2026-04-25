@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Live Trading Dashboard</title>
+    <style>
+        body {
+            font-family: 'Courier New', monospace;
+            background: #0a0e27;
+            color: #00ff9d;
+            padding: 20px;
+            margin: 0;
+        }
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+        }
+        .header {
+            text-align: center;
+            border-bottom: 2px solid #00ff9d;
+            padding-bottom: 10px;
+            margin-bottom: 30px;
+        }
+        .price-card {
+            background: #16213e;
+            padding: 30px;
+            border-radius: 15px;
+            text-align: center;
+            margin-bottom: 20px;
+            box-shadow: 0 0 20px rgba(0,255,157,0.2);
+        }
+        .symbol {
+            font-size: 24px;
+            color: #888;
+        }
+        .price {
+            font-size: 64px;
+            font-weight: bold;
+            color: #00ff9d;
+            margin: 20px 0;
+            font-family: monospace;
+        }
+        .timestamp {
+            font-size: 12px;
+            color: #666;
+        }
+        .status {
+            padding: 10px;
+            text-align: center;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        .connected {
+            background: #00ff9d20;
+            color: #00ff9d;
+            border: 1px solid #00ff9d;
+        }
+        .disconnected {
+            background: #ff444420;
+            color: #ff4444;
+            border: 1px solid #ff4444;
+        }
+        .ticks-box {
+            background: #0f0f1a;
+            border-radius: 10px;
+            padding: 20px;
+            height: 400px;
+            overflow-y: auto;
+        }
+        .tick-item {
+            padding: 8px;
+            border-bottom: 1px solid #1a1a2e;
+            font-size: 14px;
+            color: #ccc;
+        }
+        .signal {
+            background: #ff444420;
+            border-left: 3px solid #ff4444;
+            padding: 10px;
+            margin: 10px 0;
+            color: #ff4444;
+        }
+        button {
+            background: #00ff9d;
+            color: #0a0e27;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+            margin: 5px;
+        }
+        button:hover {
+            background: #00cc7d;
+        }
+        .stats {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        .stat {
+            background: #16213e;
+            padding: 15px;
+            border-radius: 10px;
+            flex: 1;
+            text-align: center;
+        }
+        .stat-value {
+            font-size: 28px;
+            font-weight: bold;
+        }
+        .up {
+            animation: flashUp 0.3s ease;
+        }
+        .down {
+            animation: flashDown 0.3s ease;
+        }
+        @keyframes flashUp {
+            0% { color: #00ff9d; transform: scale(1); }
+            50% { color: #00ff9d; text-shadow: 0 0 20px #00ff9d; transform: scale(1.05); }
+            100% { color: #00ff9d; transform: scale(1); }
+        }
+        @keyframes flashDown {
+            0% { color: #ff4444; transform: scale(1); }
+            50% { color: #ff4444; text-shadow: 0 0 20px #ff4444; transform: scale(1.05); }
+            100% { color: #ff4444; transform: scale(1); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📈 LIVE TRADING DASHBOARD</h1>
+            <p>Real-time prices from Deriv → Your Strategy → UI Display</p>
+        </div>
+
+        <div id="status" class="status disconnected">🔴 DISCONNECTED - Click Connect to Start</div>
+        
+        <div style="text-align: center; margin-bottom: 20px;">
+            <button onclick="connectWebSocket()">🔌 CONNECT TO BACKEND</button>
+            <button onclick="clearHistory()">🗑️ CLEAR HISTORY</button>
+        </div>
+
+        <div class="stats">
+            <div class="stat">
+                <div>📊 Total Ticks</div>
+                <div class="stat-value" id="tickCount">0</div>
+            </div>
+            <div class="stat">
+                <div>📈 High</div>
+                <div class="stat-value" id="highPrice">--</div>
+            </div>
+            <div class="stat">
+                <div>📉 Low</div>
+                <div class="stat-value" id="lowPrice">--</div>
+            </div>
+        </div>
+
+        <div class="price-card">
+            <div class="symbol" id="symbol">R_100</div>
+            <div class="price" id="price">---</div>
+            <div class="timestamp" id="timestamp">Waiting for data...</div>
+        </div>
+
+        <div class="ticks-box">
+            <div id="ticksList">
+                <div class="tick-item">💡 Click CONNECT and watch live ticks appear here...</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let ws = null;
+        let tickCount = 0;
+        let highPrice = null;
+        let lowPrice = null;
+        let lastPrice = null;
+        let priceHistory = [];
+
+        // 🔥 CRITICAL CODEBLOCK 1: This connects your UI to app.py's WebSocket
+        function connectWebSocket() {
+            // This URL MUST match app.py's WebSocket endpoint
+            ws = new WebSocket("ws://localhost:8000/ws");
+            
+            ws.onopen = function() {
+                updateStatus(true);
+                addTickToList("🚀 Connected to backend! Waiting for price ticks...");
+                console.log("✅ Connected to FastAPI backend");
+            };
+            
+            // 🔥 CRITICAL CODEBLOCK 2: This RECEIVES every tick from app.py
+            ws.onmessage = function(event) {
+                const message = JSON.parse(event.data);
+                console.log("Received from backend:", message);
+                
+                // Handle different message types from app.py
+                if (message.type === "price") {
+                    updatePriceDisplay(message.data);
+                } else if (message.type === "signal") {
+                    addSignalToList(message.data);
+                }
+            };
+            
+            ws.onclose = function() {
+                updateStatus(false);
+                addTickToList("❌ Disconnected from backend");
+            };
+            
+            ws.onerror = function(error) {
+                console.error("WebSocket error:", error);
+                addTickToList("⚠️ Connection error - is your backend running?");
+            };
+        }
+        
+        // Update the big price display
+        function updatePriceDisplay(data) {
+            const priceElement = document.getElementById('price');
+            const oldPrice = lastPrice;
+            const newPrice = data.price;
+            
+            // Update symbol
+            document.getElementById('symbol').innerHTML = data.symbol;
+            document.getElementById('timestamp').innerHTML = new Date(data.timestamp).toLocaleTimeString();
+            
+            // Update price with animation
+            priceElement.innerHTML = newPrice.toFixed(2);
+            
+            // Add flash animation based on price movement
+            if (oldPrice !== null) {
+                if (newPrice > oldPrice) {
+                    priceElement.className = 'price up';
+                } else if (newPrice < oldPrice) {
+                    priceElement.className = 'price down';
+                }
+                setTimeout(() => {
+                    priceElement.className = 'price';
+                }, 300);
+            }
+            
+            lastPrice = newPrice;
+            
+            // Update statistics
+            tickCount++;
+            document.getElementById('tickCount').innerHTML = tickCount;
+            
+            if (highPrice === null || newPrice > highPrice) {
+                highPrice = newPrice;
+                document.getElementById('highPrice').innerHTML = highPrice.toFixed(2);
+            }
+            
+            if (lowPrice === null || newPrice < lowPrice) {
+                lowPrice = newPrice;
+                document.getElementById('lowPrice').innerHTML = lowPrice.toFixed(2);
+            }
+            
+            // Add to tick history
+            addTickToList(`📊 ${data.symbol} → ${newPrice.toFixed(2)} @ ${new Date(data.timestamp).toLocaleTimeString()}`);
+        }
+        
+        function addSignalToList(signalData) {
+            const ticksList = document.getElementById('ticksList');
+            const signalDiv = document.createElement('div');
+            signalDiv.className = 'signal';
+            signalDiv.innerHTML = `🚀 SIGNAL GENERATED! ${JSON.stringify(signalData)}`;
+            ticksList.insertBefore(signalDiv, ticksList.firstChild);
+            
+            // Keep only last 50 items
+            while (ticksList.children.length > 50) {
+                ticksList.removeChild(ticksList.lastChild);
+            }
+        }
+        
+        function addTickToList(message) {
+            const ticksList = document.getElementById('ticksList');
+            const tickDiv = document.createElement('div');
+            tickDiv.className = 'tick-item';
+            const time = new Date().toLocaleTimeString();
+            tickDiv.innerHTML = `<strong>[${time}]</strong> ${message}`;
+            ticksList.insertBefore(tickDiv, ticksList.firstChild);
+            
+            // Keep only last 50 items
+            while (ticksList.children.length > 50) {
+                ticksList.removeChild(ticksList.lastChild);
+            }
+        }
+        
+        function updateStatus(isConnected) {
+            const statusDiv = document.getElementById('status');
+            if (isConnected) {
+                statusDiv.className = 'status connected';
+                statusDiv.innerHTML = '🟢 CONNECTED - Receiving live ticks from Deriv!';
+            } else {
+                statusDiv.className = 'status disconnected';
+                statusDiv.innerHTML = '🔴 DISCONNECTED - Click Connect to start';
+            }
+        }
+        
+        function clearHistory() {
+            document.getElementById('ticksList').innerHTML = '<div class="tick-item">📋 History cleared - waiting for new ticks...</div>';
+            tickCount = 0;
+            highPrice = null;
+            lowPrice = null;
+            lastPrice = null;
+            document.getElementById('tickCount').innerHTML = '0';
+            document.getElementById('highPrice').innerHTML = '--';
+            document.getElementById('lowPrice').innerHTML = '--';
+            document.getElementById('price').innerHTML = '---';
+            addTickToList("🗑️ History cleared");
+        }
+    </script>
+</body>
+</html>
