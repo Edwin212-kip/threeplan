@@ -15,7 +15,7 @@ from executor.market_data_stream import MarketDataStream
 from risk_management.risk_manager import RiskManager, RiskConfig
 from monitoring.performance_dashboard import PerformanceDashboard
 from strategies.bollinger_bands import BollingerBandsStrategy
-from strategies.simple_momentum import SimpleMomentumStrategy
+from strategies.simple_momentum import SMAMomentumStrategy
 from utils.logger import logger
 
 
@@ -65,9 +65,13 @@ class EnhancedTradingEngine:
             )
             self.risk_manager = RiskManager(initial_balance=balance, config=risk_config)
             logger.info(f"✅ Risk Manager initialized with ${balance:.2f}")
+
+            self.dashboard.starting_balance = balance  # Pass initial balance to dashboard
+            logger.info(f"✅ Dashboard initialized with starting balance ${balance:.2f}")
         else:
             logger.warning("Could not fetch balance, using default risk settings")
             self.risk_manager = RiskManager(initial_balance=10000)
+            self.dashboard.starting_balance = 10000  # Default starting balance for dashboard           
         
         # Initialize market data stream
         self.market_stream = MarketDataStream(self.executor.connection)
@@ -98,7 +102,7 @@ class EnhancedTradingEngine:
         }
         
         # Strategy 2: Momentum Strategy
-        mom_strategy = SimpleMomentumStrategy(
+        mom_strategy = SMAMomentumStrategy(
             symbol="R_100",
             stake_amount=1.0,
             multiplier=100,
@@ -359,7 +363,7 @@ async def main():
     
     try:
         # Run for 2 minutes in demo mode, or indefinitely with real data
-        await engine.run(duration_minutes=2, use_realtime=False)
+        await engine.run(duration_minutes=20, use_realtime=False)
     except Exception as e:
         logger.error(f"Fatal error: {e}")
         raise
