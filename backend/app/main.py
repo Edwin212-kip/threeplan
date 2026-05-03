@@ -1,16 +1,22 @@
 from fastapi import FastAPI, WebSocket
 import asyncio
 from .deriv_connector import DerivConnector
-from .strategies.dummy_strategy import DummyStrategy
+from .strategies.sma_momentum import SMAMomentumStrategy
 from fastapi.responses import HTMLResponse  
 import os 
 from pathlib import Path
+from .position_manager import PositionManager
+from .executor import DerivExecutor
 
 
 app = FastAPI()
 
 connector = DerivConnector()
-strategy = DummyStrategy()
+strategies = [
+    SMAMomentumStrategy("R_100"),
+]
+position_manager = PositionManager()
+executor = DerivExecutor()
 
 # Store connected clients
 clients = []
@@ -49,6 +55,7 @@ async def serve_dashboard():
 @app.on_event("startup")
 async def startup():
     await connector.connect()
+    await executor.connect()
     asyncio.create_task(stream_prices())  # Start the price streaming background task
 
 # ---------- STREAM LOOP ----------
@@ -56,46 +63,6 @@ async def stream_prices():
     """This function runs continuously, processing each price update"""
     
     # Define what happens when a NEW price arrives
-    async def on_price_update(data):
-        
-        """This gets called EVERY TIME Deriv sends a new price"""
-        
-        # Log to console
-        print(f"📊 {data.symbol} | {data.price}")
-        
-        # SEND PRICE TO ALL CONNECTED UI CLIENTS
-        for ws in clients[:]:  # Use [:] to create a copy (safe for modification)
-            try:
-                await ws.send_json({
-                    "type": "price",
-                    "data": {
-                        "symbol": data.symbol,
-                        "price": data.price,
-                        "timestamp": data.timestamp.isoformat()
-                    }
-                })
-            except:
-                # Remove dead connections
-                if ws in clients:
-                    clients.remove(ws)
-        
-        # Run strategy on this price tick
-        signal = await strategy.on_tick(data)
-        
-        # If strategy generates a signal, send to UI
-        if signal:
-            print(f"🚀 SIGNAL: {signal}")
-            for ws in clients[:]:
-                try:
-                    await ws.send_json({
-                        "type": "signal",
-                        "data": signal.model_dump(mode="json")
-                    })
-                except:
-                    if ws in clients:
-                        clients.remove(ws)
-        
-        # Define what happens when EACH tick arrives
     async def on_tick_received(market_data):
         """This gets called for EVERY tick from Deriv"""
         
@@ -120,23 +87,26 @@ async def stream_prices():
                 if ws in clients:
                     clients.remove(ws)
         
-        # Run strategy on this tick
-        signal = await strategy.on_tick(market_data)
-        
         # If strategy generates a signal, send to all UI clients
-        if signal:
-            print(f"🚀 SIGNAL: {signal}")
-            for ws in clients[:]:
-                try:
-                    await ws.send_json({
-                        "type": "signal",
-                        "data": signal.model_dump(mode="json")
-                    })
-                except Exception as e:
-                    print(f"Error sending signal: {e}")
-                    if ws in clients:
-                        clients.remove(ws)
-    
+        for strat in strategies:
+            signal = await strat.on_tick(market_data)
+            if signal:
+                print(f"🚀 [{strat.__class__.__name__}] → {signal}")
+                positions = position_manager.open_position(signal)
+                asyncio.create_task(executor.open_position(signal))  # Execute trade asynchronously
+                for ws in clients[:]:
+                    try:
+                        await ws.send_json({
+                            "type": "signal",
+                            "strat": strat.__class__.__name__,
+                            "data": signal.model_dump(mode="json"),
+                            "position": positions,
+                            "deriv": deriv_response
+                        })
+                    except Exception as e:
+                        print(f"Error sending signal: {e}")
+                        if ws in clients:
+                            clients.remove(ws)    
     # Subscribe to price updates from Deriv
     # You need to implement this method in DerivConnector
     await connector.subscribe_ticks(symbol="R_100", callback=on_tick_received)  # You can change the symbol as needed  
@@ -161,3 +131,5 @@ async def websocket_endpoint(websocket: WebSocket):
         if websocket in clients:
             clients.remove(websocket)
         print("❌ UI disconnected")
+
+#uvicorn backend.app.main:app --reload --port 8000

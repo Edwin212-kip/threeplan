@@ -75,6 +75,9 @@ class EnhancedTradingEngine:
         
         # Initialize market data stream
         self.market_stream = MarketDataStream(self.executor.connection)
+        # ✅ CRITICAL: Share the same lock between executor and market stream to prevent concurrent WebSocket access
+        
+        self.market_stream.set_executor(self.executor)  # Pass executor to market stream for direct access if needed    
         
         # Initialize strategies
         self._init_strategies()
@@ -359,11 +362,11 @@ class EnhancedTradingEngine:
 
 async def main():
     """Main entry point for Step 3"""
-    engine = EnhancedTradingEngine(demo_mode=True)  # Set to False for real Deriv data
+    engine = EnhancedTradingEngine(demo_mode=False)  # Set to False for real Deriv data
     
     try:
         # Run for 2 minutes in demo mode, or indefinitely with real data
-        await engine.run(duration_minutes=20, use_realtime=False)
+        await engine.run(duration_minutes=20, use_realtime=True)
     except Exception as e:
         logger.error(f"Fatal error: {e}")
         raise

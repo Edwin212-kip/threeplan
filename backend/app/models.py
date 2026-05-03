@@ -5,7 +5,7 @@ from typing import Literal
 
 class TradeSignal(BaseModel):
     symbol: str
-    action: Literal["BUY", "SELL"]
+    action: Literal["BUY", "SELL", "MULTUP", "MULTDOWN"]
     price: float
     timestamp: datetime
 

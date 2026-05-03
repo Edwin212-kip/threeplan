@@ -6,6 +6,7 @@ Added locking mechanism to prevent concurrent send/receive operations
 import json
 import asyncio
 from typing import Dict, Any, Optional
+from urllib import request
 from models.signal import TradingSignal, ActionType
 from executor.connection_manager import ConnectionManager
 from utils.logger import logger
@@ -217,3 +218,10 @@ class DerivExecutor:
     def get_trade_history(self) -> list:
         """Return trade history"""
         return self._trade_history.copy()
+    async def _send_only(self, request: Dict[str, Any]) -> None:
+
+       
+         async with self._ws_lock:
+            await self.connection.ws.send(json.dumps(request))
+            logger.debug(f"📤 Sent (no response expected): {request}")
+   
